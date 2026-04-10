@@ -4,6 +4,16 @@ const fs = require('fs');
 const path = require('path');
 const process = require('process');
 
+// Canonical device name — accessoryInformation.Name if set, otherwise serviceName
+function getFriendlyName(service) {
+  return service.accessoryInformation.Name || service.serviceName;
+}
+
+// Canonical device identifier — must be the single source of truth for matching
+function getDeviceIdentifier(service) {
+  return `${service.instance.name}${service.instance.username}${service.accessoryInformation.Manufacturer}${getFriendlyName(service)}${service.uuid.slice(0, 8)}`;
+}
+
 class HBConfigNode {
   constructor(config, RED) {
     RED.nodes.createNode(this, config);
@@ -20,6 +30,8 @@ class HBConfigNode {
     this.clientNodes = [];
     //  this.log = new Log(console, true);
     this.discoveryTimeout = null;
+    this._monitorRefreshTimeout = null;
+    this._recreatingMonitor = false;
 
     // Initialize HAP client
     this.hapClient = new HapClient({
@@ -40,20 +52,22 @@ class HBConfigNode {
   waitForNoMoreDiscoveries = (instance) => {
     if (instance)
       debug('Instance discovered: %s - %s %s:%s', instance?.name, instance?.username, instance?.ipAddress, instance?.port);
-    if (!this.discoveryTimeout) {
-      this.discoveryTimeout = setTimeout(() => {
-        this.debug('No more instances discovered, publishing services');
-        this.handleReady();
-        this.discoveryTimeout = null;
-        this.refreshInProcess = false;
-      }, 20000);  // resetInstancePool() triggers a discovery after 6 seconds.  Need to wait for it to finish.
+    if (this.discoveryTimeout) {
+      clearTimeout(this.discoveryTimeout);
     }
+    this.discoveryTimeout = setTimeout(() => {
+      this.debug('No more instances discovered, publishing services');
+      this.discoveryTimeout = null;
+      this.handleReady()
+        .catch(err => this.error(`Error during device initialization: ${err.message}`))
+        .finally(() => { this.refreshInProcess = false; });
+    }, 20000);  // resetInstancePool() triggers a discovery after 6 seconds.  Need to wait for it to finish.
   };
 
   /**
-   * Populate the list of devices and handle duplicates
+   * Refresh the device list from Homebridge instances
    */
-  async handleReady() {
+  async refreshDeviceList() {
     const updatedDevices = await this.hapClient.getAllServices();
     if (this.debugLogging && updatedDevices && updatedDevices.length && process.uptime() < 300) {
       try {
@@ -66,46 +80,61 @@ class HBConfigNode {
     }
     // Fix broken uniqueId's from HAP-Client
     updatedDevices.forEach((service) => {
-      const friendlyName = (service.accessoryInformation.Name ? service.accessoryInformation.Name : service.serviceName);
-      service.uniqueId = `${service.instance.name}${service.instance.username}${service.accessoryInformation.Manufacturer}${friendlyName}${service.uuid.slice(0, 8)}`;
+      service.uniqueId = getDeviceIdentifier(service);
     });
-    updatedDevices.forEach((updatedService, index) => {
-      if (this.hbDevices.find(service => service.uniqueId === updatedService.uniqueId)) {
-        // debug(`Exsiting UniqueID breakdown - ${updatedService.serviceName}-${updatedService.instance.username}-${updatedService.aid}-${updatedService.iid}-${updatedService.type}`);
-        const update = this.hbDevices.find(service => service.uniqueId === updatedService.uniqueId);
-        update.instance = updatedService.instance;
+    // Rebuild device list: update existing, add new, drop stale, deduplicate
+    const existingMap = new Map(this.hbDevices.map(s => [s.uniqueId, s]));
+    const newMap = new Map();
+    updatedDevices.forEach(updatedService => {
+      if (newMap.has(updatedService.uniqueId)) return; // Skip duplicates within batch
+      const existing = existingMap.get(updatedService.uniqueId);
+      if (existing) {
+        // debug(`Existing UniqueID breakdown - ${updatedService.serviceName}-${updatedService.instance.username}-${updatedService.aid}-${updatedService.iid}-${updatedService.type}`);
+        existing.instance = updatedService.instance;
+        newMap.set(updatedService.uniqueId, existing); // Preserve object reference for clientNode.hbDevice
       } else {
         // debug(`New Service UniqueID breakdown - ${updatedService.serviceName}-${updatedService.instance.username}-${updatedService.aid}-${updatedService.iid}-${updatedService.type}`);
-        this.hbDevices.push(updatedService);
+        newMap.set(updatedService.uniqueId, updatedService);
       }
     });
+    this.hbDevices = Array.from(newMap.values());
     this.evDevices = this.toList({ perms: 'ev' });
     this.ctDevices = this.toList({ perms: 'pw' });
-    this.log(`Devices initialized: evDevices: ${this.evDevices.length}, ctDevices: ${this.ctDevices.length}`);
-    this.handleDuplicates(this.evDevices);
-    this.connectClientNodes();
   }
 
-  toList(perms) {
+  /**
+   * Populate the list of devices, handle duplicates, and connect client nodes
+   */
+  async handleReady() {
+    await this.refreshDeviceList();
+    this.log(`Devices initialized: evDevices: ${this.evDevices.length}, ctDevices: ${this.ctDevices.length}`);
+    this.handleDuplicates(this.evDevices);
+    await this.connectClientNodes();
+  }
+
+  toList() {
     const supportedTypes = new Set([
       'Air Purifier', 'Air Quality Sensor', 'Battery', 'Carbon Dioxide Sensor', 'Carbon Monoxide Sensor', 'Camera Rtp Stream Management',
       'Doorbell', 'Fan', 'Fanv2', 'Garage Door Opener', 'Humidity Sensor', 'Input Source',
       'Leak Sensor', 'Light Sensor', 'Lightbulb', 'Lock Mechanism', 'Motion Sensor', 'Occupancy Sensor',
       'Outlet', 'Smoke Sensor', 'Speaker', 'Stateless Programmable Switch', 'Switch',
       'Television', 'Temperature Sensor', 'Thermostat', 'Contact Sensor',
-      'Window', 'Window Covering', 'Light Sensor'
+      'Window', 'Window Covering'
     ]);
     return filterUnique(this.hbDevices)
       .filter(service => supportedTypes.has(service.humanType))
-      .map(service => ({
-        name: (service.accessoryInformation.Name ? service.accessoryInformation.Name : service.serviceName),
-        fullName: `${(service.accessoryInformation.Name ? service.accessoryInformation.Name : service.serviceName)} - ${service.humanType}`,
-        sortName: `${(service.accessoryInformation.Name ? service.accessoryInformation.Name : service.serviceName)}:${service.type}`,
-        uniqueId: service.uniqueId,
-        homebridge: service.instance.name,
-        service: service.type,
-        manufacturer: service.accessoryInformation.Manufacturer,
-      }))
+      .map(service => {
+        const name = getFriendlyName(service);
+        return {
+          name,
+          fullName: `${name} - ${service.humanType}`,
+          sortName: `${name}:${service.type}`,
+          uniqueId: service.uniqueId,
+          homebridge: service.instance.name,
+          service: service.type,
+          manufacturer: service.accessoryInformation.Manufacturer,
+        };
+      })
       .sort((a, b) => a.sortName.localeCompare(b.sortName));
   }
 
@@ -131,27 +160,66 @@ class HBConfigNode {
   registerClientNode(clientNode) {
     debug('Register: %s type: %s', clientNode.type, clientNode.name);
     this.clientNodes[clientNode.id] = clientNode;
+
+    // Connect immediately from existing device list when possible
+    if (this.hbDevices.length > 0 && !this.refreshInProcess) {
+      const matchedDevice = this._findMatchingDevice(clientNode.device);
+      if (matchedDevice) {
+        clientNode.hbDevice = matchedDevice;
+        clientNode.status({ fill: 'green', shape: 'dot', text: 'connected' });
+        // Defer emit so subclass constructors complete before handlers fire
+        process.nextTick(() => clientNode.emit('hbReady', matchedDevice));
+        debug('_Registered: %s type: %s', clientNode.type, matchedDevice.type, matchedDevice.serviceName);
+        if (['hb-status', 'hb-event', 'hb-resume'].includes(clientNode.type)) {
+          this._scheduleMonitorRefresh();
+        }
+        return;
+      }
+      // Device not in current list — trigger rediscovery to find newly added devices
+    }
+
     clientNode.status({ fill: 'yellow', shape: 'ring', text: 'connecting' });
-    this.waitForNoMoreDiscoveries(); // Connect new nodes created after startup has ended ( Need a function to rather than brute forcing it )
+    this.waitForNoMoreDiscoveries();
+  }
+
+  unregisterClientNode(clientNode) {
+    debug('Unregister: %s type: %s', clientNode.type, clientNode.name);
+    delete this.clientNodes[clientNode.id];
+  }
+
+  _findMatchingDevice(deviceId) {
+    return this.hbDevices.find(service => deviceId === getDeviceIdentifier(service));
+  }
+
+  _scheduleMonitorRefresh() {
+    if (this._monitorRefreshTimeout) {
+      clearTimeout(this._monitorRefreshTimeout);
+    }
+    this._monitorRefreshTimeout = setTimeout(() => {
+      this._monitorRefreshTimeout = null;
+      this.monitorDevices()
+        .catch(err => this.error(`Error refreshing monitor: ${err.message}`));
+    }, 500);
   }
 
   async connectClientNodes() {
     debug('connect %s nodes', Object.keys(this.clientNodes).length);
-    for (const [key, clientNode] of Object.entries(this.clientNodes)) {
-      // debug('_Register: %s type: "%s" "%s" "%s"', clientNode.type, clientNode.name, clientNode.instance, clientNode.device);
-      const matchedDevice = this.hbDevices.find(service => {
-        const friendlyName = (service.accessoryInformation.Name ? service.accessoryInformation.Name : service.serviceName);
-        const deviceIdentifier = `${service.instance.name}${service.instance.username}${service.accessoryInformation.Manufacturer}${friendlyName}${service.uuid.slice(0, 8)}`;
-        return clientNode.device === deviceIdentifier;
-      });
+    for (const [, clientNode] of Object.entries(this.clientNodes)) {
+      const matchedDevice = this._findMatchingDevice(clientNode.device);
 
       if (matchedDevice) {
+        // Skip nodes already connected to the same device (preserves status, avoids re-emitting hbReady)
+        if (clientNode.hbDevice === matchedDevice) {
+          debug('_Already connected: %s type: %s', clientNode.type, matchedDevice.type);
+          continue;
+        }
         clientNode.hbDevice = matchedDevice;
         clientNode.status({ fill: 'green', shape: 'dot', text: 'connected' });
         clientNode.emit('hbReady', matchedDevice);
         debug('_Registered: %s type: %s', clientNode.type, matchedDevice.type, matchedDevice.serviceName);
       } else {
         this.error(`ERROR: Device registration failed '${clientNode.fullName}' - '${clientNode.device}'`);
+        clientNode.status({ fill: 'red', shape: 'ring', text: 'not found' });
       }
     };
 
@@ -165,31 +233,34 @@ class HBConfigNode {
         .filter(node => ['hb-status', 'hb-event', 'hb-resume'].includes(node.type)) // Filter by type
         .map(node => node.hbDevice) // Map to hbDevice property
         .filter(Boolean); // Remove any undefined or null values, if present;
-      this.log(`Connected to ${Object.keys(monitorNodes).length} Homebridge devices`);
+      this.log(`Connected to ${monitorNodes.length} Homebridge devices`);
       // console.log('monitorNodes', monitorNodes);
       if (this.monitor) {
-        // This is kinda brute force, and should be refactored to only refresh the changed monitorNodes
+        this._recreatingMonitor = true;
         this.monitor.finish();
       }
-      this.monitor = await this.hapClient.monitorCharacteristics(monitorNodes);
+      try {
+        this.monitor = await this.hapClient.monitorCharacteristics(monitorNodes);
+      } finally {
+        this._recreatingMonitor = false;
+      }
       this.monitor.on('service-update', (services) => {
         services.forEach(service => {
-          const eventNodes = Object.values(this.clientNodes).filter(clientNode => {
-            const deviceIdentifier = `${service.instance.name}${service.instance.username}${service.accessoryInformation.Manufacturer}${(service.accessoryInformation.Name ? service.accessoryInformation.Name : service.serviceName)}${service.uuid.slice(0, 8)}`;
-            // debug('service-update: compare', clientNode.config.device, deviceIdentifier);
-            return clientNode.config.device === deviceIdentifier;
-          }
+          const deviceId = getDeviceIdentifier(service);
+          const eventNodes = Object.values(this.clientNodes).filter(
+            clientNode => clientNode.config.device === deviceId
           );
-          // debug('service-update', service.serviceName, eventNodes);
           eventNodes.forEach(eventNode => eventNode.emit('hbEvent', service));
         });
       });
       this.monitor.on('monitor-close', (instance, hadError) => {
+        if (this._recreatingMonitor) return;
         debug('monitor-close', instance.name, instance.ipAddress, instance.port, hadError)
         this.disconnectClientNodes(instance);
         // this.refreshDevices();
       })
       this.monitor.on('monitor-refresh', (instance, hadError) => {
+        if (this._recreatingMonitor) return;
         debug('monitor-refresh', instance.name, instance.ipAddress, instance.port, hadError)
         this.reconnectClientNodes(instance);
         // this.refreshDevices();
@@ -226,6 +297,14 @@ class HBConfigNode {
 
   close() {
     debug('hb-config: close');
+    if (this.discoveryTimeout) {
+      clearTimeout(this.discoveryTimeout);
+      this.discoveryTimeout = null;
+    }
+    if (this._monitorRefreshTimeout) {
+      clearTimeout(this._monitorRefreshTimeout);
+      this._monitorRefreshTimeout = null;
+    }
     this.hapClient?.destroy();
   }
 }
