@@ -27,6 +27,7 @@ class HbControlNode extends hbBaseNode {
         `Invalid payload. Expected JSON object, e.g., {"On":false, "Brightness":0}. Valid values: ${validNames}`
       );
       this.status({ text: 'Invalid payload', shape: 'dot', fill: 'red' });
+      done();
       return;
     }
 
@@ -91,7 +92,7 @@ class HbControlNode extends hbBaseNode {
       // Update status
       const statusText = this.statusText(JSON.stringify(Object.assign({}, ...results)));
       this.status({ text: statusText, shape: 'dot', fill });
-      done
+      done();
     } catch (error) {
       this.handleError(error, 'Unhandled error');
       done(`Unhandled error: ${error.message}`);

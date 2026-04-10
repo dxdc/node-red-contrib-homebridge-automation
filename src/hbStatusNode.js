@@ -23,10 +23,10 @@ class HbStatusNode extends HbBaseNode {
       });
 
       send(Object.assign(message, this.createMessage(result)));
-      done
+      done();
     } else {
       this.status({ fill: "red", shape: "ring", text: "disconnected" });
-      this.error("No response from device", this.name);
+      this.error("No response from device", message);
       this.hbConfigNode.disconnectClientNodes(this.hbDevice.instance);
       done("No response from device");
     }

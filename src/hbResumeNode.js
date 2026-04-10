@@ -54,7 +54,7 @@ class HbResumeNode extends HbBaseNode {
       fill: 'green',
     });
 
-    this.lastOutputTime = Date.now();;
+    this.lastOutputTime = Date.now();
     send(message);
   }
 
