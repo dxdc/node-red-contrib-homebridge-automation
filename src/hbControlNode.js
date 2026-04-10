@@ -1,7 +1,7 @@
-const hbBaseNode = require('./hbBaseNode');
+const HbBaseNode = require('./hbBaseNode');
 const debug = require('debug')('hapNodeRed:hbControlNode');
 
-class HbControlNode extends hbBaseNode {
+class HbControlNode extends HbBaseNode {
   constructor(config, RED) {
     super(config, RED);
   }
@@ -11,6 +11,7 @@ class HbControlNode extends hbBaseNode {
 
     if (!this.hbDevice) {
       this.handleWarning('HB not initialized');
+      done('HB not initialized');
       return;
     }
 
@@ -26,7 +27,8 @@ class HbControlNode extends hbBaseNode {
       this.error(
         `Invalid payload. Expected JSON object, e.g., {"On":false, "Brightness":0}. Valid values: ${validNames}`
       );
-      this.status({ text: 'Invalid payload', shape: 'dot', fill: 'red' });
+      this.status({ text: 'Invalid payload', shape: 'ring', fill: 'red' });
+      done();
       return;
     }
 
@@ -91,7 +93,7 @@ class HbControlNode extends hbBaseNode {
       // Update status
       const statusText = this.statusText(JSON.stringify(Object.assign({}, ...results)));
       this.status({ text: statusText, shape: 'dot', fill });
-      done
+      done();
     } catch (error) {
       this.handleError(error, 'Unhandled error');
       done(`Unhandled error: ${error.message}`);
