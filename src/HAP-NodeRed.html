@@ -171,14 +171,15 @@
       return this.name || "Choose accessory/service";
     },
     oneditsave: function() {
-      var n = $('#node-input-device option:selected').text();
-      // console.log("selected name ", $('#node-input-device option:selected'));
+      var selected = $('#node-input-device option:selected');
+      if (!selected.length) return;
+      // console.log("selected name ", selected);
 
-      this.name = $('#node-input-device option:selected').attr('name').toString();
-      // this.fullName = $('#node-input-device option:selected').attr('text').toString();
-      this.Homebridge = $('#node-input-device option:selected').attr('homebridge').toString();
-      this.Manufacturer = $('#node-input-device option:selected').attr('manufacturer').toString();
-      this.Service = $('#node-input-device option:selected').attr('service').toString();
+      this.name = (selected.attr('name') || '').toString();
+      // this.fullName = (selected.attr('text') || '').toString();
+      this.Homebridge = (selected.attr('homebridge') || '').toString();
+      this.Manufacturer = (selected.attr('manufacturer') || '').toString();
+      this.Service = (selected.attr('service') || '').toString();
       $('#node-input-name').val(this.name);
     },
     oneditprepare: function() {
@@ -193,16 +194,16 @@
       var getDevs = function(configNode) {
         $.getJSON('hap-device/evDevices/' + configNode, function(data) {
           $('#node-input-device').find('option').remove().end();
-          for (d in data) {
+          data.forEach(function(d) {
             $('<option/>', {
-              value: data[d].uniqueId,
-              name: data[d].name,
-              text: data[d].fullName,
-              homebridge: data[d].homebridge,
-              manufacturer: data[d].manufacturer,
-              service: data[d].service
+              value: d.uniqueId,
+              name: d.name,
+              text: d.fullName,
+              homebridge: d.homebridge,
+              manufacturer: d.manufacturer,
+              service: d.service
             }).appendTo('#node-input-device');
-          }
+          });
           if (node.device) {
             $('#node-input-device').val(node.device);
           }
@@ -236,11 +237,10 @@
         $.ajax({
           url: 'hap-device/refresh/' + configNode,
           type: 'POST'
-        }).done(function(data) {
-          setTimeout(function() {
-            getDevs(configNode);
-            $('#node-input-device-refresh').removeClass('disabled');
-          }, 3000);
+        }).done(function() {
+          getDevs(configNode);
+        }).always(function() {
+          $('#node-input-device-refresh').removeClass('disabled');
         });
       });
     }
@@ -261,7 +261,6 @@
 	</div>
 
     <input type="hidden" id="node-input-name">
-    </div>
 </script>
 
 
@@ -322,14 +321,14 @@
       return this.name || "Choose accessory/service";
     },
     oneditsave: function() {
-      var n = $('#node-input-device option:selected').text();
-      // console.log("selected name ", $('#node-input-device option:selected'));
-
-      this.sname = $('#node-input-device option:selected').attr('name').toString();
-      this.Homebridge = $('#node-input-device option:selected').attr('homebridge').toString();
-      this.Manufacturer = $('#node-input-device option:selected').attr('manufacturer').toString();
-      this.Service = $('#node-input-device option:selected').attr('service').toString();
-      $('#node-input-name').val(this.sname);
+      var selected = $('#node-input-device option:selected');
+      if (!selected.length) return;
+      // console.log("selected name ", selected);
+      this.name = (selected.attr('name') || '').toString();
+      this.Homebridge = (selected.attr('homebridge') || '').toString();
+      this.Manufacturer = (selected.attr('manufacturer') || '').toString();
+      this.Service = (selected.attr('service') || '').toString();
+      $('#node-input-name').val(this.name);
     },
     oneditprepare: function() {
       var node = this;
@@ -344,17 +343,17 @@
       var getDevs = function(configNode) {
         $.getJSON('hap-device/evDevices/' + configNode, function(data) {
           $('#node-input-device').find('option').remove().end();
-          for (d in data) {
+          data.forEach(function(d) {
             $('<option/>', {
-              value: data[d].uniqueId,
-              fullName: data[d].fullName,
-              name: data[d].name,
-              text: data[d].fullName,
-              homebridge: data[d].homebridge,
-              manufacturer: data[d].manufacturer,
-              service: data[d].service
+              value: d.uniqueId,
+              fullName: d.fullName,
+              name: d.name,
+              text: d.fullName,
+              homebridge: d.homebridge,
+              manufacturer: d.manufacturer,
+              service: d.service
             }).appendTo('#node-input-device');
-          }
+          });
           if (node.device) {
             $('#node-input-device').val(node.device);
           }
@@ -388,11 +387,10 @@
         $.ajax({
           url: 'hap-device/refresh/' + configNode,
           type: 'POST'
-        }).done(function(data) {
-          setTimeout(function() {
-            getDevs(configNode);
-            $('#node-input-device-refresh').removeClass('disabled');
-          }, 3000);
+        }).done(function() {
+          getDevs(configNode);
+        }).always(function() {
+          $('#node-input-device-refresh').removeClass('disabled');
         });
       });
     }
@@ -415,7 +413,6 @@
 	</div>
 
     <input type="hidden" id="node-input-name">
-    </div>
 </script>
 
 
@@ -473,13 +470,14 @@
       return this.name || "Choose accessory/service";
     },
     oneditsave: function() {
-      var n = $('#node-input-device option:selected').text();
-      // console.log("selected name " + n);
-      this.sname = $('#node-input-device option:selected').attr('name').toString();
-      this.Homebridge = $('#node-input-device option:selected').attr('homebridge').toString();
-      this.Manufacturer = $('#node-input-device option:selected').attr('manufacturer').toString();
-      this.Service = $('#node-input-device option:selected').attr('service').toString();
-      $('#node-input-name').val(this.sname);
+      var selected = $('#node-input-device option:selected');
+      if (!selected.length) return;
+      // console.log("selected name ", selected);
+      this.name = (selected.attr('name') || '').toString();
+      this.Homebridge = (selected.attr('homebridge') || '').toString();
+      this.Manufacturer = (selected.attr('manufacturer') || '').toString();
+      this.Service = (selected.attr('service') || '').toString();
+      $('#node-input-name').val(this.name);
     },
     oneditprepare: function() {
       var node = this;
@@ -494,22 +492,22 @@
       var getDevs = function(configNode) {
         $.getJSON('hap-device/evDevices/' + configNode, function(data) {
           $('#node-input-device').find('option').remove().end();
-          for (d in data) {
+          data.forEach(function(d) {
             $('<option/>', {
-              value: data[d].uniqueId,
-              fullName: data[d].fullName,
-              name: data[d].name,
-              text: data[d].fullName,
-              homebridge: data[d].homebridge,
-              manufacturer: data[d].manufacturer,
-              service: data[d].service
+              value: d.uniqueId,
+              fullName: d.fullName,
+              name: d.name,
+              text: d.fullName,
+              homebridge: d.homebridge,
+              manufacturer: d.manufacturer,
+              service: d.service
             }).appendTo('#node-input-device');
-          }
+          });
           if (node.device) {
             $('#node-input-device').val(node.device);
           }
         }).fail(function(jqXHR, textStatus, errorThrown) {
-          console.log("[hb-config] problem getting ctDevices");
+          console.log("[hb-config] problem getting evDevices");
           console.log(textStatus);
         });
 
@@ -538,11 +536,10 @@
         $.ajax({
           url: 'hap-device/refresh/' + configNode,
           type: 'POST'
-        }).done(function(data) {
-          setTimeout(function() {
-            getDevs(configNode);
-            $('#node-input-device-refresh').removeClass('disabled');
-          }, 3000);
+        }).done(function() {
+          getDevs(configNode);
+        }).always(function() {
+          $('#node-input-device-refresh').removeClass('disabled');
         });
       });
     }
@@ -570,7 +567,6 @@
    </div>
 
     <input type="hidden" id="node-input-name">
-    </div>
 
 </script>
 
@@ -626,12 +622,13 @@
       return this.name || "Choose accessory/service";
     },
     oneditsave: function() {
-      var n = $('#node-input-device option:selected').text();
-      // console.log("selected name " + n);
-      this.name = $('#node-input-device option:selected').attr('name').toString();
-      this.Homebridge = $('#node-input-device option:selected').attr('homebridge').toString();
-      this.Manufacturer = $('#node-input-device option:selected').attr('manufacturer').toString();
-      this.Service = $('#node-input-device option:selected').attr('service').toString();
+      var selected = $('#node-input-device option:selected');
+      if (!selected.length) return;
+      // console.log("selected name ", selected);
+      this.name = (selected.attr('name') || '').toString();
+      this.Homebridge = (selected.attr('homebridge') || '').toString();
+      this.Manufacturer = (selected.attr('manufacturer') || '').toString();
+      this.Service = (selected.attr('service') || '').toString();
       $('#node-input-name').val(this.name);
     },
     oneditprepare: function() {
@@ -647,17 +644,17 @@
       var getDevs = function(configNode) {
         $.getJSON('hap-device/ctDevices/' + configNode, function(data) {
           $('#node-input-device').find('option').remove().end();
-          for (d in data) {
+          data.forEach(function(d) {
             $('<option/>', {
-              value: data[d].uniqueId,
-              fullName: data[d].fullName,
-              name: data[d].name,
-              text: data[d].fullName,
-              homebridge: data[d].homebridge,
-              manufacturer: data[d].manufacturer,
-              service: data[d].service
+              value: d.uniqueId,
+              fullName: d.fullName,
+              name: d.name,
+              text: d.fullName,
+              homebridge: d.homebridge,
+              manufacturer: d.manufacturer,
+              service: d.service
             }).appendTo('#node-input-device');
-          }
+          });
           if (node.device) {
             $('#node-input-device').val(node.device);
           }
@@ -691,11 +688,10 @@
         $.ajax({
           url: 'hap-device/refresh/' + configNode,
           type: 'POST'
-        }).done(function(data) {
-          setTimeout(function() {
-            getDevs(configNode);
-            $('#node-input-device-refresh').removeClass('disabled');
-          }, 3000);
+        }).done(function() {
+          getDevs(configNode);
+        }).always(function() {
+          $('#node-input-device-refresh').removeClass('disabled');
         });
       });
     }
